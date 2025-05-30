@@ -1,54 +1,58 @@
 #!/bin/bash
 
+# Color setup
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${GREEN}====== Suspicious Activity Monitor ======${NC}"
-echo "Timestamp: $(date)"
-echo "----------------------------------------"
+# Log file (update this if using a non-Ubuntu system)
+AUTH_LOG="/var/log/auth.log"
 
-# 1. Recent sudo use
-echo -e "${YELLOW}[+] Recent sudo activity:${NC}"
-sudo grep 'COMMAND=' /var/log/auth.log | tail -n 10
-echo ""
+# Timestamped output file
+HOST=$(hostname)
+TIME=$(date +%Y%m%d_%H%M%S)
+OUTPUT_FILE="auth_log_report_${HOST}_${TIME}.txt"
 
-# 2. New users added recently
-echo -e "${YELLOW}[+] Recently created user accounts (last 7 days):${NC}"
-sudo find /home -type d -ctime -7 -exec ls -ld {} \;
-echo ""
+echo -e "${GREEN}====== Authentication Log Analysis ======${NC}" | tee "$OUTPUT_FILE"
+echo "Host: $HOST" | tee -a "$OUTPUT_FILE"
+echo "Date: $(date)" | tee -a "$OUTPUT_FILE"
+echo "----------------------------------------" | tee -a "$OUTPUT_FILE"
 
-# 3. Login attempts from unknown IPs
-echo -e "${YELLOW}[+] Unusual login IPs (last 20 attempts):${NC}"
-last -a | head -n 20
-echo ""
+# 1. Failed login attempts
+echo -e "${YELLOW}[+] Failed login attempts:${NC}" | tee -a "$OUTPUT_FILE"
+grep "Failed password" "$AUTH_LOG" | awk '{print $(NF-3), $(NF-5), $1, $2, $3}' | sort | uniq -c | sort -nr | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-# 4. High CPU usage processes
-echo -e "${YELLOW}[+] Top 5 CPU consuming processes:${NC}"
-ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu | head -n 6
-echo ""
+# 2. Successful logins
+echo -e "${YELLOW}[+] Successful logins:${NC}" | tee -a "$OUTPUT_FILE"
+grep "Accepted password" "$AUTH_LOG" | awk '{print $(NF-3), $(NF-5), $1, $2, $3}' | sort | uniq -c | sort -nr | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-# 5. High memory usage processes
-echo -e "${YELLOW}[+] Top 5 memory consuming processes:${NC}"
-ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -n 6
-echo ""
+# 3. Invalid user attempts
+echo -e "${YELLOW}[+] Invalid user login attempts:${NC}" | tee -a "$OUTPUT_FILE"
+grep "Invalid user" "$AUTH_LOG" | awk '{print $(NF), $(NF-1), $1, $2, $3}' | sort | uniq -c | sort -nr | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-# 6. Unusual listening ports
-echo -e "${YELLOW}[+] Listening network ports (non-standard):${NC}"
-sudo ss -tuln | grep -vE '(:22|:80|:443)' | grep LISTEN
-echo ""
+# 4. Root login attempts
+echo -e "${YELLOW}[+] Root login attempts:${NC}" | tee -a "$OUTPUT_FILE"
+grep "user root" "$AUTH_LOG" | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-# 7. Suspicious cron jobs
-echo -e "${YELLOW}[+] Suspicious cron jobs (including hidden scripts):${NC}"
-sudo crontab -l 2>/dev/null
-sudo ls -la /etc/cron* /var/spool/cron 2>/dev/null | grep '\.'
-echo ""
+# 5. Sudo usage logs
+echo -e "${YELLOW}[+] Sudo command usage:${NC}" | tee -a "$OUTPUT_FILE"
+grep "sudo:" "$AUTH_LOG" | awk -F ':' '{print $4}' | sort | uniq -c | sort -nr | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-# 8. Hidden files in home directories
-echo -e "${YELLOW}[+] Hidden files in user home directories:${NC}"
-sudo find /home -type f -name ".*" -ls | head -n 10
-echo ""
+# 6. SSH connection attempts
+echo -e "${YELLOW}[+] SSH connection attempts:${NC}" | tee -a "$OUTPUT_FILE"
+grep "sshd" "$AUTH_LOG" | grep "Connection from" | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
 
-echo -e "${GREEN}====== Scan Complete ======${NC}"
+# 7. Suspicious activity
+echo -e "${YELLOW}[+] Suspicious authentication log entries (scan keywords):${NC}" | tee -a "$OUTPUT_FILE"
+grep -Ei "illegal|failure|error|denied|unauthorized" "$AUTH_LOG" | tail -n 20 | tee -a "$OUTPUT_FILE"
+echo "" | tee -a "$OUTPUT_FILE"
+
+echo -e "${GREEN}====== Analysis Complete ======${NC}" | tee -a "$OUTPUT_FILE"
