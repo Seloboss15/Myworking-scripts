@@ -205,3 +205,13 @@ audit_logs() {
         print_finding "INFO" "/var/log/syslog not found"
     fi
 }
+
+# Main execution: call audit functions
+audit_system_info
+audit_users
+audit_network
+audit_filesystem
+audit_processes
+audit_logs
+
+echo -e "\n${GREEN}Audit complete! Report saved to ${AUDIT_FILE}${NC}"
