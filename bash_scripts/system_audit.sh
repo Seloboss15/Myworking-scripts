@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # System Security Audit Script
@@ -200,4 +199,4 @@ audit_logs() {
             print_finding "MEDIUM" "Recent system errors:"
             echo "$recent_errors" | tee -a "$AUDIT_FILE"
         else
-           
+    fi     
