@@ -199,4 +199,9 @@ audit_logs() {
             print_finding "MEDIUM" "Recent system errors:"
             echo "$recent_errors" | tee -a "$AUDIT_FILE"
         else
-    fi     
+            print_finding "INFO" "No recent system errors found"
+        fi
+    else
+        print_finding "INFO" "/var/log/syslog not found"
+    fi
+}
