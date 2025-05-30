@@ -35,19 +35,20 @@ ping_host() {
         # Get MAC address (works only on local network)
         local mac=$(arp -n "$ip" 2>/dev/null | grep "$ip" | awk '{print $3}')
         
-        # Try to identify OS using TTL
-        local ttl=$(ping -c 1 -W 1 "$ip" 2>/dev/null | grep "ttl=" | cut -d'=' -f4 | cut -d' ' -f1)
-        local os_guess=""
-        if [[ -n "$ttl" ]]; then
-            if [[ $ttl -le 64 ]]; then
-                os_guess="Linux/Unix"
-            elif [[ $ttl -le 128 ]]; then
-                os_guess="Windows"
-            elif [[ $ttl -le 255 ]]; then
-                os_guess="Cisco/Network Device"
-            fi
-        fi
-        
+      # Extract TTL as integer from ping output
+local ttl=$(ping -c 1 -W 1 "$ip" 2>/dev/null | grep -oP 'ttl=\K[0-9]+' | head -1)
+local os_guess=""
+
+if [[ -n "$ttl" ]]; then
+    if (( ttl <= 64 )); then
+        os_guess="Linux/Unix"
+    elif (( ttl <= 128 )); then
+        os_guess="Windows"
+    elif (( ttl <= 255 )); then
+        os_guess="Cisco/Network Device"
+    fi
+fi
+
         printf "${GREEN}[+]${NC} %-15s" "$ip"
         [[ -n "$hostname" ]] && printf " %-25s" "$hostname" || printf " %-25s" "N/A"
         [[ -n "$mac" ]] && printf " %-17s" "$mac" || printf " %-17s" "N/A"
