@@ -1,68 +1,93 @@
 #!/bin/bash
 
-# Colors for formatting
+# Colors for better output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-CYAN='\033[0;36m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Check for domain input
+# Check if domain is provided
 if [ -z "$1" ]; then
     echo -e "${RED}[!] Usage: $0 <domain>${NC}"
     exit 1
 fi
 
 DOMAIN=$1
-OUTPUT_FILE="dns_enum_${DOMAIN}_$(date +%Y%m%d_%H%M%S).txt"
+DATE=$(date +%Y%m%d_%H%M%S)
+OUTPUT="dns_enum_${DOMAIN}_${DATE}.txt"
 
-echo -e "${CYAN}[*] Starting DNS Enumeration for: ${DOMAIN}${NC}"
-echo -e "[*] Output will be saved to ${OUTPUT_FILE}\n"
+echo -e "${BLUE}====== DNS Enumeration for $DOMAIN ======${NC}" | tee "$OUTPUT"
+echo "Timestamp: $(date)" | tee -a "$OUTPUT"
+echo "----------------------------------------" | tee -a "$OUTPUT"
 
-{
-    echo "====== DNS Enumeration for $DOMAIN ======"
-    echo "Timestamp: $(date)"
-    echo "----------------------------------------"
-    
-    echo -e "\n[+] A Records:"
-    dig +short A $DOMAIN
+# Function to run dig and print records
+print_record() {
+    local type=$1
+    echo -e "\n${GREEN}[+] ${type} Records:${NC}" | tee -a "$OUTPUT"
+    dig +short "$DOMAIN" "$type" | tee -a "$OUTPUT"
+}
 
-    echo -e "\n[+] AAAA Records:"
-    dig +short AAAA $DOMAIN
+# Record Types
+print_record A
+print_record AAAA
+print_record MX
+print_record NS
+print_record TXT
+print_record SOA
 
-    echo -e "\n[+] MX Records:"
-    dig +short MX $DOMAIN
+# CNAME Record for www
+echo -e "\n${GREEN}[+] CNAME (www):${NC}" | tee -a "$OUTPUT"
+dig +short www."$DOMAIN" CNAME | tee -a "$OUTPUT"
 
-    echo -e "\n[+] NS Records:"
-    dig +short NS $DOMAIN
+# Attempt Zone Transfer
+echo -e "\n${YELLOW}[+] Attempting Zone Transfer (AXFR):${NC}" | tee -a "$OUTPUT"
+NS_SERVERS=$(dig +short "$DOMAIN" NS)
 
-    echo -e "\n[+] TXT Records:"
-    dig +short TXT $DOMAIN
+for ns in $NS_SERVERS; do
+    echo -e "\n[AXFR attempt] Trying $ns...." | tee -a "$OUTPUT"
+    dig @$ns "$DOMAIN" AXFR | tee -a "$OUTPUT"
+done
 
-    echo -e "\n[+] SOA Record:"
-    dig +short SOA $DOMAIN
+# Reverse DNS Lookup (PTR)
+echo -e "\n${GREEN}[+] Reverse DNS Lookup (PTR):${NC}" | tee -a "$OUTPUT"
+A_RECORD=$(dig +short "$DOMAIN" A | head -n 1)
+if [ -n "$A_RECORD" ]; then
+    PTR=$(dig -x "$A_RECORD" +short)
+    echo "$A_RECORD -> $PTR" | tee -a "$OUTPUT"
+else
+    echo "No A record found for PTR lookup" | tee -a "$OUTPUT"
+fi
 
-    echo -e "\n[+] CNAME (if any):"
-    dig +short CNAME $DOMAIN
+# WHOIS Info
+echo -e "\n${GREEN}[+] WHOIS Info:${NC}" | tee -a "$OUTPUT"
+WHOIS=$(whois "$DOMAIN")
+echo "$WHOIS" | tee -a "$OUTPUT"
 
-    echo -e "\n[+] Attempting Zone Transfer (AXFR):"
-    for ns in $(dig +short NS $DOMAIN); do
-        echo -e "\n[AXFR attempt] Trying $ns..."
-        dig @$ns $DOMAIN AXFR
-    done
+# Extract Key WHOIS Fields
+echo -e "\n${BLUE}[+] WHOIS Summary:${NC}" | tee -a "$OUTPUT"
+REGISTRAR=$(echo "$WHOIS" | grep -i "Registrar:" | head -n 1 | cut -d ':' -f2-)
+CREATION=$(echo "$WHOIS" | grep -i "Creation Date:" | head -n 1 | cut -d ':' -f2-)
+EXPIRY=$(echo "$WHOIS" | grep -i "Expiry Date\|Expiration Date" | head -n 1 | cut -d ':' -f2-)
+echo "Registrar     : $REGISTRAR" | tee -a "$OUTPUT"
+echo "Creation Date : $CREATION" | tee -a "$OUTPUT"
+echo "Expiry Date   : $EXPIRY" | tee -a "$OUTPUT"
 
-    echo -e "\n[+] Reverse DNS Lookup (PTR):"
-    ip=$(dig +short $DOMAIN | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1)
-    if [ -n "$ip" ]; then
-        ptr=$(dig -x $ip +short)
-        echo "$ip -> $ptr"
-    else
-        echo "No A record IP found for PTR lookup."
-    fi
+# SPF / DMARC / DKIM
+echo -e "\n${YELLOW}[+] SPF / DMARC / DKIM Records:${NC}" | tee -a "$OUTPUT"
+TXT_RECORDS=$(dig +short "$DOMAIN" TXT)
 
-    echo -e "\n[+] WHOIS Info:"
-    whois $DOMAIN 2>/dev/null | head -n 20
+echo -e "\nSPF Records:" | tee -a "$OUTPUT"
+echo "$TXT_RECORDS" | grep -i "v=spf1" | tee -a "$OUTPUT"
 
-    echo -e "\n====== End of Report ======"
-} | tee "$OUTPUT_FILE"
+echo -e "\nDMARC Record (_dmarc.$DOMAIN):" | tee -a "$OUTPUT"
+dig +short _dmarc."$DOMAIN" TXT | tee -a "$OUTPUT"
 
-echo -e "\n${GREEN}[+] DNS Enumeration completed. Results saved in: ${OUTPUT_FILE}${NC}"
+echo -e "\nDKIM Records (selector1._domainkey.$DOMAIN):" | tee -a "$OUTPUT"
+dig +short selector1._domainkey."$DOMAIN" TXT | tee -a "$OUTPUT"
+
+# Final Summary
+echo -e "\n${BLUE}[+] Final Summary:${NC}" | tee -a "$OUTPUT"
+RECORDS_FOUND=$(grep -E "^\[+\]" "$OUTPUT" | wc -l)
+echo "Total record types collected: $RECORDS_FOUND" | tee -a "$OUTPUT"
+echo -e "${GREEN}✅ DNS enumeration complete. Output saved to: $OUTPUT${NC}"
